@@ -636,7 +636,7 @@ proc firstFloat*(t: PType): BiggestFloat =
     assert(t.n != nil)        # range directly given:
     assert(t.n.kind == nkRange)
     getFloatValue(t.n.sons[0])
-  of tyVar: firstFloat(t.sons[0])
+  of tyVar, tySink, tyLent: firstFloat(t.sons[0])
   of tyGenericInst, tyDistinct, tyTypeDesc, tyAlias, tyStatic, tyInferred:
     firstFloat(lastSon(t))
   else:
@@ -687,11 +687,11 @@ proc lastOrd*(conf: ConfigRef; t: PType; fixedUnsigned = false): BiggestInt =
 proc lastFloat*(t: PType): BiggestFloat =
   case t.kind
   of tyFloat..tyFloat128: Inf
-  of tyVar: lastFloat(t.sons[0])
   of tyRange:
     assert(t.n != nil)        # range directly given:
     assert(t.n.kind == nkRange)
     getFloatValue(t.n.sons[1])
+  of tyVar, tySink, tyLent: lastFloat(t.sons[0])
   of tyGenericInst, tyDistinct, tyTypeDesc, tyAlias, tyStatic, tyInferred:
     lastFloat(lastSon(t))
   else:
