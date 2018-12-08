@@ -60,3 +60,38 @@ proc p() =
     echo toString(y), " ", toString2(y)
 
 p()
+
+#######################################################
+# Issue #7882
+
+type
+  MyEnum = enum
+    noVal, val1, val2
+
+  TVal1 = object
+    a: int
+
+  TVal2 = object
+    a: float
+
+  TObj = object
+    version: int
+    case kind: MyEnum
+      of noVal: discard
+      of val1: val1: TVal1
+      of val2: val2: TVal2
+
+proc myproc: TObj =
+  result.kind = val1
+  result.val1 = TVal1(a: 10)
+
+proc myproc2(x: int): TObj =
+  if x > 10:
+    result.kind = val1
+    result.val1 = TVal1(a: 10)
+  else:
+    result = TObj(kind: val2)
+    result.val2 = TVal2(a: 3.0)
+
+discard myproc()
+discard myproc2(5)

@@ -157,6 +157,15 @@ proc neg(n: PNode; o: Operators): PNode =
     result.sons[0] = newSymNode(o.opNot)
     result.sons[1] = n
 
+proc replaceEnums(n: var PNode) = 
+  if n.kind == nkSym and n.sym.kind == skEnumField: 
+    let nn = newIntNode(nkIntLit, n.sym.position)
+    nn.typ = n.typ
+    n = nn
+  else:
+    for i in 0..<safeLen(n):
+      replaceEnums(n[i])
+  
 proc buildCall(op: PSym; a: PNode): PNode =
   result = newNodeI(nkCall, a.info, 2)
   result.sons[0] = newSymNode(op)
@@ -329,6 +338,7 @@ proc canon*(n: PNode; o: Operators): PNode =
       result.sons[1] = x |+| y[2]
       result.sons[2] = y[1]
   else: discard
+  replaceEnums(result)
 
 proc buildAdd*(a: PNode; b: BiggestInt; o: Operators): PNode =
   canon(if b != 0: o.opAdd.buildCall(a, nkIntLit.newIntNode(b)) else: a, o)
@@ -406,8 +416,10 @@ type
     o*: Operators
 
 proc addFact*(m: var TModel, nn: PNode) =
-  let n = usefulFact(nn, m.o)
-  if n != nil: m.s.add n
+  var n = usefulFact(nn, m.o)
+  if n != nil: 
+    replaceEnums(n)
+    m.s.add n
 
 proc addFactNeg*(m: var TModel, n: PNode) =
   let n = n.neg(m.o)
@@ -989,19 +1001,38 @@ proc buildElse(n: PNode; o: Operators): PNode =
   result.sons[1] = s
   result.sons[2] = n.sons[0]
 
-proc addDiscriminantFact*(m: var TModel, n: PNode) =
-  var fact = newNodeI(nkCall, n.info, 3)
-  fact.sons[0] = newSymNode(m.o.opEq)
-  fact.sons[1] = n.sons[0]
-  fact.sons[2] = n.sons[1]
-  m.s.add fact
-
-proc addAsgnFact*(m: var TModel, key, value: PNode) =
+proc addAsgnFactSimple(m: var TModel, key, value: PNode) = 
   var fact = newNodeI(nkCall, key.info, 3)
   fact.sons[0] = newSymNode(m.o.opEq)
   fact.sons[1] = key
   fact.sons[2] = value
+  replaceEnums(fact)
   m.s.add fact
+
+proc addAsgnFact*(m: var TModel, key, value: PNode) =
+  case value.kind:
+  of nkObjConstr:
+    addAsgnFactSimple(m, key, value)
+    for i in 1..<value.len:
+      var key2 = newNodeI(nkDotExpr, value[i][0].info)
+      key2.add key
+      key2.add value[i][0]
+      addAsgnFact(m, key2, value[i][1])
+  of nkTupleConstr:
+    addAsgnFactSimple(m, key, value)
+    for i in 0..<value.len:
+      if value[i].kind == nkExprColonExpr:
+        var key2 = newNodeI(nkDotExpr, value[i][0].info)
+        key2.add key
+        key2.add value[i][0]
+        addAsgnFact(m, key2, value[i][1]) 
+      else:
+        var key2 = newNodeI(nkBracket, value[i].info)
+        key2.add key
+        key2.add newIntNode(nkIntLit, i)
+        addAsgnFact(m, key2, value[i]) 
+  else:
+    addAsgnFactSimple(m, key, value)
 
 proc sameSubexprs*(m: TModel; a, b: PNode): bool =
   # This should be used to check whether two *path expressions* refer to the
@@ -1025,6 +1056,7 @@ proc addCaseBranchFacts*(m: var TModel, n: PNode, i: int) =
     m.s.add buildOf(branch, n.sons[0], m.o)
   else:
     m.s.add n.buildElse(m.o).neg(m.o)
+  replaceEnums(m.s[^1])
 
 proc buildProperFieldCheck(access, check: PNode; o: Operators): PNode =
   if check.sons[1].kind == nkCurly:
