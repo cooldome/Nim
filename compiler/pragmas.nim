@@ -12,7 +12,7 @@
 import
   os, platform, condsyms, ast, astalgo, idents, semdata, msgs, renderer,
   wordrecg, ropes, options, strutils, extccomp, math, magicsys, trees,
-  types, lookups, lineinfos, pathutils
+  types, lookups, lineinfos, pathutils, modulepaths, modules
 
 const
   FirstCallConv* = wNimcall
@@ -49,7 +49,7 @@ const
     wDeprecated,
     wFloatchecks, wInfChecks, wNanChecks, wPragma, wEmit, wUnroll,
     wLinearScanEnd, wPatterns, wTrMacros, wEffects, wNoForward, wReorder, wComputedGoto,
-    wInjectStmt, wDeprecated, wExperimental, wThis}
+    wInjectStmt, wDeprecated, wExperimental, wThis, wMainModule}
   lambdaPragmas* = {FirstCallConv..LastCallConv, wImportc, wExportc, wNodecl,
     wNosideeffect, wSideeffect, wNoreturn, wDynlib, wHeader,
     wDeprecated, wExtern, wThread, wImportCpp, wImportObjC, wAsmNoStackFrame,
@@ -1131,6 +1131,22 @@ proc singlePragma(c: PContext, sym: PSym, n: PNode, i: var int,
         if sym == nil: invalidPragma(c, it)
         else: sym.flags.incl sfUsed
       of wLiftLocals: discard
+      of wMainModule:
+        if n.info.fileIndex == c.module.info.fileIndex:
+          if c.topStmts > 1:
+            localError(c.config, n.info, "mainModule pragma is allowed only as the first statement of the module")
+          if it.kind in nkPragmaCallKinds and it.len == 2:
+            if sfMainModule in c.module.flags:
+              # main module switch is required
+              c.module.flags.excl sfMainModule # this module is no longer main one
+              let moduleName = getStrLitNode(c, it)
+              let f = checkModuleName(c.config, moduleName)
+              if f != InvalidFileIDX:
+                discard compileModule(c.graph, f, {sfMainModule})
+              else:
+                localError(c.config, it[1].info, "main module $1 is not found", [moduleName.strVal])         
+          else:
+            localError(c.config, it.info, "mainModule pragma expects one string argument")
       else: invalidPragma(c, it)
     elif comesFromPush and whichKeyword(ident) in {wTags, wRaises}:
       discard "ignore the .push pragma; it doesn't apply"

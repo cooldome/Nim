@@ -557,11 +557,17 @@ proc isEmptyTree(n: PNode): bool =
   else: result = false
 
 proc semStmtAndGenerateGenerics(c: PContext, n: PNode): PNode =
-  if c.topStmts == 0 and not isImportSystemStmt(c.graph, n):
-    if sfSystemModule notin c.module.flags and not isEmptyTree(n):
-      c.importTable.addSym c.graph.systemModule # import the "System" identifier
-      importAllSymbols(c, c.graph.systemModule)
-      inc c.topStmts
+  if c.topStmts == 0:
+    if not isImportSystemStmt(c.graph, n):
+      if sfSystemModule notin c.module.flags and not isEmptyTree(n):
+        c.importTable.addSym c.graph.systemModule # import the "System" identifier
+        importAllSymbols(c, c.graph.systemModule)
+        inc c.topStmts
+    if sfMainModule in c.module.flags and n.kind == nkPragma:
+      pragma(c, c.p.owner, n, stmtPragmas)
+      if sfMainModule notin c.module.flags:
+        # module lost its status of the main module, abandon it
+        return nil
   else:
     inc c.topStmts
   if sfNoForward in c.module.flags:
